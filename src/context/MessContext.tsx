@@ -399,8 +399,6 @@ export const MessProvider = ({ children }: { children: ReactNode }) => {
     targetUserId?: string;
   }) => {
     const qty = Math.max(1, Math.floor(params.quantity));
-    const trayId = await getActiveTrayId();
-    if (!trayId) return;
 
     if (params.targetType === 'member' && params.targetUserId) {
       const memberConsumed = countMemberConsumed(eggs);
@@ -414,36 +412,43 @@ export const MessProvider = ({ children }: { children: ReactNode }) => {
       setEggs(prev => {
         const availableEggs = prev.filter(e => !e.consumed);
         const selected = availableEggs.slice(0, appliedQty);
-        if (selected.length > 0) {
-          const last = selected[selected.length - 1];
-          setLastEatEvent({ memberId: params.targetUserId!, eggIndex: last.index, timestamp: Date.now() });
-        }
         const selectedIds = new Set(selected.map(e => e.index));
         return prev.map(e =>
-          selectedIds.has(e.index) ? { ...e, consumed: true, ownerId: params.targetUserId!, isPending: true } : e
+          selectedIds.has(e.index)
+            ? { ...e, consumed: true, ownerId: params.targetUserId!, isPending: false }
+            : e
         );
       });
 
       setMembers(prev =>
-        prev.map(m => (m.id === params.targetUserId ? { ...m, eggsEaten: m.eggsEaten + appliedQty } : m))
+        prev.map(m => (m.id === params.targetUserId ? { ...m, eggsEaten: newCount } : m))
       );
 
-      await supabase
-        .from('tray_consumption')
-        .upsert(
-          { tray_id: trayId, user_id: params.targetUserId, eggs_consumed: newCount },
-          { onConflict: 'tray_id,user_id' }
-        );
-
-      const logEntry: TrayLogEntry = {
+      const optimisticLogEntry: TrayLogEntry = {
         date: new Date().toISOString(),
-        tray_id: trayId,
+        tray_id: group.id,
         qty: appliedQty,
         user_id: params.targetUserId,
         note: params.note || '',
       };
-      await supabase.from('tray_log').insert(logEntry);
-      setLogs(prev => [logEntry, ...prev]);
+      setLogs(prev => [optimisticLogEntry, ...prev]);
+
+      void (async () => {
+        const trayId = await getActiveTrayId();
+        if (!trayId) return;
+
+        await supabase
+          .from('tray_consumption')
+          .upsert(
+            { tray_id: trayId, user_id: params.targetUserId, eggs_consumed: newCount },
+            { onConflict: 'tray_id,user_id' }
+          );
+
+        await supabase.from('tray_log').insert({
+          ...optimisticLogEntry,
+          tray_id: trayId,
+        });
+      })();
       return;
     }
 
@@ -454,32 +459,47 @@ export const MessProvider = ({ children }: { children: ReactNode }) => {
       if (appliedQty <= 0) return;
 
       const newWastedTotal = totalWastedEggs + appliedQty;
+
       setWastedEggs(newWastedTotal);
       setEggs(prev => {
         const available = prev.filter(e => !e.consumed).slice(0, appliedQty);
         const selectedIds = new Set(available.map(e => e.index));
         return prev.map(e =>
-          selectedIds.has(e.index) ? { ...e, consumed: true, ownerId: null } : e
+          selectedIds.has(e.index) ? { ...e, consumed: true, ownerId: null, isPending: false } : e
         );
       });
 
-      await supabase
-        .from('tray_wastage')
-        .upsert({ tray_id: trayId, wasted_eggs: newWastedTotal }, { onConflict: 'tray_id' });
+      const optimisticLogEntry: TrayLogEntry | null = currentUserId
+        ? {
+            date: new Date().toISOString(),
+            tray_id: group.id,
+            qty: appliedQty,
+            user_id: currentUserId,
+            note: params.note || '',
+          }
+        : null;
 
-      if (currentUserId) {
-        const logEntry: TrayLogEntry = {
-          date: new Date().toISOString(),
-          tray_id: trayId,
-          qty: appliedQty,
-          user_id: currentUserId,
-          note: params.note || '',
-        };
-        await supabase.from('tray_log').insert(logEntry);
-        setLogs(prev => [logEntry, ...prev]);
+      if (optimisticLogEntry) {
+        setLogs(prev => [optimisticLogEntry, ...prev]);
       }
+
+      void (async () => {
+        const trayId = await getActiveTrayId();
+        if (!trayId) return;
+
+        await supabase
+          .from('tray_wastage')
+          .upsert({ tray_id: trayId, wasted_eggs: newWastedTotal }, { onConflict: 'tray_id' });
+
+        if (currentUserId && optimisticLogEntry) {
+          await supabase.from('tray_log').insert({
+            ...optimisticLogEntry,
+            tray_id: trayId,
+          });
+        }
+      })();
     }
-  }, [currentUserId, eggs, getActiveTrayId, members, totalWastedEggs]);
+  }, [currentUserId, eggs, getActiveTrayId, group.id, members, totalWastedEggs]);
 
   const confirmEgg = useCallback((eggIndex: number) => {
     setEggs(prev => prev.map(e => e.index === eggIndex ? { ...e, isPending: false } : e));

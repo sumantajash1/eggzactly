@@ -33,16 +33,14 @@ const MemberPanel = () => {
     setIsDialogOpen(true);
   };
 
-  const handleAddSubmit = async () => {
+  const handleAddSubmit = () => {
     const qty = Math.max(1, Math.floor(Number(quantity) || 1));
-    setIsSubmitting(true);
-    await addWithLog({
+    void addWithLog({
       targetType: dialogTargetType,
       targetUserId: dialogTargetUserId ?? undefined,
       quantity: qty,
       note: notes,
     });
-    setIsSubmitting(false);
     setIsDialogOpen(false);
   };
 

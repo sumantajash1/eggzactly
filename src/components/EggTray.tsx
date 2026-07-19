@@ -28,7 +28,7 @@ const EggTray = ({ trayContainerRef }: EggTrayProps) => {
         <div className="grid grid-cols-5 gap-1.5">
           {eggs.map((egg) => (
             <div key={egg.index} className="tray-cell flex items-center justify-center w-[34px] h-[34px]">
-              {egg.consumed && !egg.ownerId && !egg.isPending ? (
+              {egg.consumed && !egg.ownerId ? (
                 <div
                   className="egg-cell-consumed w-[26px] h-[26px] rounded-full flex items-center justify-center animate-scale-in bg-muted-foreground/40"
                   style={{
@@ -37,7 +37,7 @@ const EggTray = ({ trayContainerRef }: EggTrayProps) => {
                 >
                   <span className="text-[10px] leading-none text-muted-foreground/80">×</span>
                 </div>
-              ) : egg.consumed && !egg.isPending ? (
+              ) : egg.consumed ? (
                 <div
                   className="egg-cell-consumed w-[26px] h-[26px] rounded-full flex items-center justify-center animate-scale-in"
                   style={{
