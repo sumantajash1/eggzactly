@@ -80,6 +80,21 @@ const MEMBER_COLORS = [
 const createInitialEggs = (): Egg[] =>
   Array.from({ length: 30 }, (_, i) => ({ index: i, consumed: false, ownerId: null }));
 
+const countMemberConsumed = (eggList: Egg[]) =>
+  eggList.filter(e => e.consumed && e.ownerId).length;
+
+const markWastedEggsOnTray = (eggList: Egg[], count: number): Egg[] => {
+  const next = eggList.map(e => ({ ...e }));
+  for (let i = 0; i < count; i++) {
+    const available = next.filter(e => !e.consumed);
+    if (available.length === 0) break;
+    const slot = available[Math.floor(Math.random() * available.length)];
+    slot.consumed = true;
+    slot.ownerId = null;
+  }
+  return next;
+};
+
 const MessContext = createContext<MessContextType | null>(null);
 
 export const useMessContext = () => {
@@ -196,7 +211,7 @@ export const MessProvider = ({ children }: { children: ReactNode }) => {
                 randomEgg.ownerId = m.id;
               }
             });
-            setEggs(initial);
+            setEggs(markWastedEggsOnTray(initial, initialWastedEggs));
           }
         }
       } catch (e) {
@@ -219,9 +234,8 @@ export const MessProvider = ({ children }: { children: ReactNode }) => {
   const incrementEgg = useCallback(async (memberId: string) => {
     let newCount = 0;
     setEggs(prev => {
-      const consumedCount = prev.filter(e => e.consumed).length;
-      const remainingUsableEggs = 30 - totalWastedEggs;
-      if (consumedCount >= remainingUsableEggs) return prev;
+      const memberConsumed = countMemberConsumed(prev);
+      if (memberConsumed >= 30 - totalWastedEggs) return prev;
       const availableEggs = prev.filter(e => !e.consumed);
       if (availableEggs.length === 0) return prev;
       const randomEgg = availableEggs[Math.floor(Math.random() * availableEggs.length)];
@@ -325,10 +339,18 @@ export const MessProvider = ({ children }: { children: ReactNode }) => {
   }, [getActiveTrayId]);
 
   const incrementWastedEgg = useCallback(() => {
-    const totalConsumed = eggs.filter(e => e.consumed).length;
-    if (totalConsumed + totalWastedEggs >= 30) return;
+    const memberConsumed = countMemberConsumed(eggs);
+    if (memberConsumed + totalWastedEggs >= 30) return;
     const next = totalWastedEggs + 1;
     setWastedEggs(next);
+    setEggs(prev => {
+      const available = prev.filter(e => !e.consumed);
+      if (available.length === 0) return prev;
+      const slot = available[Math.floor(Math.random() * available.length)];
+      return prev.map(e =>
+        e.index === slot.index ? { ...e, consumed: true, ownerId: null } : e
+      );
+    });
 
     void (async () => {
       try {
@@ -347,6 +369,14 @@ export const MessProvider = ({ children }: { children: ReactNode }) => {
   const decrementWastedEgg = useCallback(() => {
     const next = Math.max(0, totalWastedEggs - 1);
     setWastedEggs(next);
+    setEggs(prev => {
+      const wastedSlots = prev.filter(e => e.consumed && !e.ownerId);
+      if (wastedSlots.length === 0) return prev;
+      const slot = wastedSlots[wastedSlots.length - 1];
+      return prev.map(e =>
+        e.index === slot.index ? { ...e, consumed: false, ownerId: null } : e
+      );
+    });
 
     void (async () => {
       try {
@@ -373,8 +403,8 @@ export const MessProvider = ({ children }: { children: ReactNode }) => {
     if (!trayId) return;
 
     if (params.targetType === 'member' && params.targetUserId) {
-      const consumedCount = eggs.filter(e => e.consumed).length;
-      const remainingForConsumption = Math.max(0, 30 - totalWastedEggs - consumedCount);
+      const memberConsumed = countMemberConsumed(eggs);
+      const remainingForConsumption = Math.max(0, 30 - totalWastedEggs - memberConsumed);
       const appliedQty = Math.min(qty, remainingForConsumption);
       if (appliedQty <= 0) return;
 
@@ -418,13 +448,20 @@ export const MessProvider = ({ children }: { children: ReactNode }) => {
     }
 
     if (params.targetType === 'wasted') {
-      const consumedCount = eggs.filter(e => e.consumed).length;
-      const remainingForWastage = Math.max(0, 30 - consumedCount - totalWastedEggs);
+      const memberConsumed = countMemberConsumed(eggs);
+      const remainingForWastage = Math.max(0, 30 - memberConsumed - totalWastedEggs);
       const appliedQty = Math.min(qty, remainingForWastage);
       if (appliedQty <= 0) return;
 
       const newWastedTotal = totalWastedEggs + appliedQty;
       setWastedEggs(newWastedTotal);
+      setEggs(prev => {
+        const available = prev.filter(e => !e.consumed).slice(0, appliedQty);
+        const selectedIds = new Set(available.map(e => e.index));
+        return prev.map(e =>
+          selectedIds.has(e.index) ? { ...e, consumed: true, ownerId: null } : e
+        );
+      });
 
       await supabase
         .from('tray_wastage')
