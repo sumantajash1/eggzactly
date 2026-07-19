@@ -5,21 +5,22 @@ interface EggTrayProps {
 }
 
 const EggTray = ({ trayContainerRef }: EggTrayProps) => {
-  const { eggs, members } = useMessContext();
+  const { eggs, members, totalWastedEggs } = useMessContext();
 
   const getOwnerColor = (ownerId: string | null) => {
     if (!ownerId) return undefined;
     return members.find(m => m.id === ownerId)?.color;
   };
 
-  const totalConsumed = eggs.filter(e => e.consumed).length;
+  const memberConsumed = eggs.filter(e => e.consumed && e.ownerId).length;
+  const remaining = 30 - memberConsumed - totalWastedEggs;
 
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="flex items-center justify-between w-full px-1">
         <h2 className="text-sm font-display font-bold text-foreground">🥚 Egg Tray</h2>
         <span className="text-xs font-medium text-muted-foreground">
-          {30 - totalConsumed}/30
+          {remaining}/30
         </span>
       </div>
 
@@ -27,7 +28,16 @@ const EggTray = ({ trayContainerRef }: EggTrayProps) => {
         <div className="grid grid-cols-5 gap-1.5">
           {eggs.map((egg) => (
             <div key={egg.index} className="tray-cell flex items-center justify-center w-[34px] h-[34px]">
-              {egg.consumed && !egg.isPending ? (
+              {egg.consumed && !egg.ownerId && !egg.isPending ? (
+                <div
+                  className="egg-cell-consumed w-[26px] h-[26px] rounded-full flex items-center justify-center animate-scale-in bg-muted-foreground/40"
+                  style={{
+                    boxShadow: 'inset 0 -2px 4px rgba(0,0,0,0.2)',
+                  }}
+                >
+                  <span className="text-[10px] leading-none text-muted-foreground/80">×</span>
+                </div>
+              ) : egg.consumed && !egg.isPending ? (
                 <div
                   className="egg-cell-consumed w-[26px] h-[26px] rounded-full flex items-center justify-center animate-scale-in"
                   style={{

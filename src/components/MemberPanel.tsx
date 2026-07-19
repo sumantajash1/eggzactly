@@ -21,8 +21,8 @@ const MemberPanel = () => {
   const [dialogTargetType, setDialogTargetType] = useState<'member' | 'wasted'>('member');
   const [dialogTargetUserId, setDialogTargetUserId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const totalConsumed = eggs.filter(e => e.consumed).length;
-  const trayEmpty = totalConsumed + totalWastedEggs >= 30;
+  const memberConsumed = eggs.filter(e => e.consumed && e.ownerId).length;
+  const trayEmpty = memberConsumed + totalWastedEggs >= 30;
 
   const openAddDialog = (target: { label: string; type: 'member' | 'wasted'; userId?: string }) => {
     setDialogTargetLabel(target.label);
